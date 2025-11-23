@@ -1,1 +1,31 @@
+name: LMO Sync → Notion
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Send update to Notion
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.NOTION_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "Notion-Version": "2022-06-28" \
+            --data '{
+              "parent": { "database_id": "'"${{ secrets.NOTION_LMO_DB }}"'" },
+              "properties": {
+                "Name": { "title": [{ "text": { "content": "LMO Orchestrator Updated" } }] },
+                "Event": { "rich_text": [{ "text": { "content": "Commit to main branch" } }] },
+                "Status": { "select": { "name": "Updated" }},
+                "Timestamp": { "date": { "start": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'" }}
+              }
+            }' \
+            https://api.notion.com/v1/pages
 
