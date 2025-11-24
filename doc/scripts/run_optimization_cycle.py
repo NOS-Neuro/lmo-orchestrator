@@ -12,7 +12,7 @@ OPENAI_KEY = os.environ["OPENAI_API_KEY"]
 openai.api_key = OPENAI_KEY
 
 def load_clients():
-    with open("clients/clients.yaml", "r") as f:
+    with open("doc/clients/clients.yaml", "r") as f:
         data = yaml.safe_load(f)
     return data["clients"]
 
