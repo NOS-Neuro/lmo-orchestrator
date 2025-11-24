@@ -1,13 +1,23 @@
 clients:
-  - name: "Acme LMO"
-    slug: "acme-lmo"
-    industry: "3PL / warehousing"
-    canonical_facts: |
-      - Acme LMO is a Canadian 3PL provider.
-      - They specialize in language model optimization for logistics companies.
-    competitors: |
-      - Competitor A
-      - Competitor B
-    notion_page_id: 2b5b3e69c7c3800ab61dcabf4bcde74e
+- name: Acme LMO
+  slug: acme-lmo
+  industry: 3PL / warehousing
+  canonical_facts: '- Acme LMO is a Canadian 3PL provider.
 
+    - They specialize in language model optimization for logistics companies.
 
+    '
+  competitors: '- Competitor A
+
+    - Competitor B
+
+    '
+  notion_page_id: 2b5b3e69c7c3800ab61dcabf4bcde74e
+- name: Beta Logistics
+  slug: Beta Logistics-7
+  industry: Logistics-1
+  canonical_facts: '- Beta Logistics is a client of NOS LMO.
+
+    - Industry: Logistics-1'
+  competitors: ''
+  notion_page_id: 2b5b3e69-c7c3-81f9-abf3-ef8107e60323
