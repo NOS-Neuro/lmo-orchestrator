@@ -6,7 +6,7 @@ from datetime import datetime
 # --- ENVIRONMENT ---
 
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
-NOTION_DB = os.environ["NOTION_LMO_DB"]
+NOTION_DB = os.environ["NOTION_LMO_DB"].strip()
 ADMIN_TOKEN = os.environ["LMO_ADMIN_TOKEN"]
 
 GITHUB_OWNER = os.environ["GITHUB_OWNER"]
