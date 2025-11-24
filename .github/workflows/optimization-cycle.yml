@@ -30,4 +30,5 @@ jobs:
           NOTION_LMO_DB: ${{ secrets.NOTION_LMO_DB }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python scripts/run_optimization_cycle.py
+          python doc/scripts/run_optimization_cycle.py
+
