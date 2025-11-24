@@ -14,10 +14,19 @@ OPENAI_KEY = os.environ["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_KEY)
 
 def load_clients():
-    """Load client definitions from YAML."""
     with open("doc/clients/clients.yaml", "r") as f:
         data = yaml.safe_load(f)
-    return data["clients"]
+
+    # If YAML is { clients: [...] }
+    if isinstance(data, dict) and "clients" in data:
+        return data["clients"]
+
+    # If YAML is already a list: [ {name: ...}, {name: ...} ]
+    if isinstance(data, list):
+        return data
+
+    # Helpful error if structure is unexpected
+    raise ValueError(f"Unexpected clients.yaml structure: {data}")
 
 def notion_update(page_id, scores):
     """Update Notion properties."""
