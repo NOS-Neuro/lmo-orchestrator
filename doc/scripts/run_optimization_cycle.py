@@ -14,18 +14,21 @@ OPENAI_KEY = os.environ["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_KEY)
 
 def load_clients():
-    with open("doc/clients/clients.yaml", "r") as f:
+    path = "doc/clients/clients.yaml"
+    print(f"Loading clients from: {os.getcwd()}/{path}")
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"clients.yaml not found at: {path}")
+
+    with open(path, "r") as f:
         data = yaml.safe_load(f)
 
-    # If YAML is { clients: [...] }
     if isinstance(data, dict) and "clients" in data:
         return data["clients"]
 
-    # If YAML is already a list: [ {name: ...}, {name: ...} ]
     if isinstance(data, list):
         return data
 
-    # Helpful error if structure is unexpected
     raise ValueError(f"Unexpected clients.yaml structure: {data}")
 
 def notion_update(page_id, scores):
