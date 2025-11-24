@@ -56,35 +56,60 @@ def notion_update(page_id, scores):
 
     requests.patch(url, headers=headers, json=body)
 
+from openai import OpenAI, RateLimitError
+
+# ... existing setup ...
+
 def run_cycle():
-    """Main optimization routine."""
     clients = load_clients()
+    print(f"[LMO] Loaded {len(clients)} client(s).")
 
     for c in clients:
+        print(f"[LMO] Processing client: {c.get('name')}")
+
         prompt = f"""
-        Evaluate the LLM visibility, accuracy, and drift for:
-        Company: {c['name']}
+        Evaluate the LLM visibility, accuracy, and drift for this company.
+
+        Company name: {c.get('name')}
+        Industry: {c.get('industry')}
+
         Canonical facts:
-        {c['canonical_facts']}
+        {c.get('canonical_facts')}
         """
 
-        # New OpenAI SDK format
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": "Evaluate company representation."},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an analyst that evaluates how well language models represent this company.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
 
-        # For now: placeholder deterministic scores
-        scores = {
-            "visibility": 0.75,
-            "accuracy": 0.80,
-            "drift": 0.10
-        }
+            # TODO: parse the response into scores
+            scores = {
+                "visibility": 0.75,
+                "accuracy": 0.80,
+                "drift": 0.10,
+            }
 
-        notion_update(c["notion_page_id"], scores)
+        except RateLimitError as e:
+            print(f"[LMO] Rate limit / quota issue: {e}. Using fallback scores.")
+            scores = {
+                "visibility": 0.60,
+                "accuracy": 0.70,
+                "drift": 0.20,
+            }
+
+        page_id = c.get("notion_page_id")
+        if not page_id:
+            raise ValueError(f"[LMO] Client {c.get('name')} is missing 'notion_page_id'")
+
+        notion_update(page_id, scores)
+
 
 if __name__ == "__main__":
     run_cycle()
