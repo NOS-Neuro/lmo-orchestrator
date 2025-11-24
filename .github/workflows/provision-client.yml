@@ -1,0 +1,80 @@
+name: LMO New Client Provisioning
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_name:
+        description: "Client display name (e.g., Acme Logistics)"
+        required: true
+        type: string
+      client_slug:
+        description: "Slug (used in repo name, e.g., acme-logistics)"
+        required: true
+        type: string
+      industry:
+        description: "Industry description"
+        required: true
+        type: string
+      monthly_fee:
+        description: "Monthly LMO fee (number)"
+        required: false
+        default: "0"
+        type: string
+      template_repo:
+        description: "Template repo name (without org), e.g. lmo-client-template"
+        required: true
+        type: string
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_OWNER: "NOS-Neuro"                 # <— change if your org/user is different
+
+    steps:
+      - name: Checkout orchestrator repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pyyaml openai
+
+      - name: Provision new LMO client
+        id: provision
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_LMO_DB: ${{ secrets.NOTION_LMO_DB }}
+          LMO_ADMIN_TOKEN: ${{ secrets.LMO_ADMIN_TOKEN }} # Personal access token with repo create perms
+          CLIENT_NAME: ${{ github.event.inputs.client_name }}
+          CLIENT_SLUG: ${{ github.event.inputs.client_slug }}
+          INDUSTRY: ${{ github.event.inputs.industry }}
+          MONTHLY_FEE: ${{ github.event.inputs.monthly_fee }}
+          TEMPLATE_REPO: ${{ github.event.inputs.template_repo }}
+        run: |
+          python doc/scripts/provision_client.py
+
+      - name: Commit updated clients.yaml
+        if: ${{ steps.provision.outputs.did_update_clients_yaml == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add doc/clients/clients.yaml
+          git commit -m "Add LMO client ${{ github.event.inputs.client_name }}" || echo "No changes to commit"
+          git push
+
+      - name: Run first optimization cycle (all clients, including new)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_LMO_DB: ${{ secrets.NOTION_LMO_DB }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python doc/scripts/run_optimization_cycle.py
