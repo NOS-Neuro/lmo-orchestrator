@@ -1,34 +1,13 @@
-name: LMO Monthly Optimization Engine
+clients:
+  - name: "Acme LMO"
+    slug: "acme-lmo"
+    industry: "3PL / warehousing"
+    canonical_facts: |
+      - Acme LMO is a Canadian 3PL provider.
+      - They specialize in language model optimization for logistics companies.
+    competitors: |
+      - Competitor A
+      - Competitor B
+    notion_page_id: "PASTE-YOUR-NOTION-PAGE-ID-HERE"
 
-on:
-  schedule:
-    # Every Monday at 06:00 UTC (tweak as you like)
-    - cron: "0 6 * * 1"
-  workflow_dispatch: {}
-
-jobs:
-  optimize:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests pyyaml
-
-      - name: Run optimization cycle
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_LMO_DB: ${{ secrets.NOTION_LMO_DB }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          python scripts/run_optimization_cycle.py
 
