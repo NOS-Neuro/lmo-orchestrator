@@ -64,12 +64,26 @@ jobs:
           python doc/scripts/provision_client.py
 
       - name: Commit updated clients.yaml
+        env:
+          LMO_ADMIN_TOKEN: ${{ secrets.LMO_ADMIN_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "lmo-orchestrator-bot"
+          git config user.email "lmo-orchestrator-bot@users.noreply.github.com"
+
           git add doc/clients/clients.yaml
-          git commit -m "Add LMO client Beta Logistics"
-          git push
+
+          # If nothing changed, skip committing
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Add LMO client ${CLIENT_NAME:-New LMO client}"
+
+          # Use PAT to authenticate against GitHub
+          git remote set-url origin https://x-access-token:${LMO_ADMIN_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          git push origin HEAD:${GITHUB_REF_NAME}
+
 
 
       - name: Run first optimization cycle (all clients, including new)
