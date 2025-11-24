@@ -62,20 +62,21 @@ def create_notion_row():
     body = {
         "parent": {"database_id": NOTION_DB},
         "properties": {
-            "Client Name": {
+            # Title column in LMO Client Tracker
+            "Name": {
                 "title": [{"text": {"content": CLIENT_NAME}}],
             },
+            # Industry is a SELECT property in your DB
             "Industry": {
-                "rich_text": [{"text": {"content": INDUSTRY}}],
-            },
-            "Status": {
-                "select": {"name": "Active"},
+                "select": {"name": INDUSTRY},
             },
             "Monthly Fee": {
                 "number": MONTHLY_FEE,
             },
             "Automation Event": {
-                "rich_text": [{"text": {"content": "Provisioned via orchestrator"}}],
+                "rich_text": [
+                    {"text": {"content": "Provisioned via orchestrator"}}
+                ],
             },
             "Automation Timestamp": {
                 "date": {"start": now_iso},
@@ -84,6 +85,8 @@ def create_notion_row():
     }
 
     print(f"[LMO] Creating Notion row for {CLIENT_NAME}")
+    print(f"[LMO] Using Notion DB id '{NOTION_DB}' (len={len(NOTION_DB)})")
+
     resp = requests.post(url, headers=headers, json=body)
     print(f"[LMO] Notion create status: {resp.status_code}")
     if not resp.ok:
@@ -94,6 +97,7 @@ def create_notion_row():
     page_id = data["id"]
     print(f"[LMO] Notion page id: {page_id}")
     return page_id
+
 
 
 def update_clients_yaml(notion_page_id: str):
