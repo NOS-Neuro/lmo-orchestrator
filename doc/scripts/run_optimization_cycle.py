@@ -7,7 +7,7 @@ from openai import OpenAI
 
 # Environment variables
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
-NOTION_DB = os.environ["NOTION_LMO_DB"]
+NOTION_DB = os.environ["NOTION_LMO_DB"].strip()
 OPENAI_KEY = os.environ["OPENAI_API_KEY"]
 
 # Initialize OpenAI client
