@@ -1,0 +1,32 @@
+name: LMO Drift Alerts
+
+on:
+  schedule:
+    # Weekdays at 12:00 UTC – adjust as you like
+    - cron: "0 12 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  drift-alerts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Check drift in Notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_LMO_DB: ${{ secrets.NOTION_LMO_DB }}
+        run: |
+          python doc/scripts/check_drift.py
