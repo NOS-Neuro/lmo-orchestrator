@@ -21,3 +21,11 @@ clients:
     - Industry: Logistics-1'
   competitors: ''
   notion_page_id: 2b5b3e69-c7c3-81f9-abf3-ef8107e60323
+- name: Gumbo-1
+  slug: Gum
+  industry: 'Retail '
+  canonical_facts: '- Gumbo-1 is a client of NOS LMO.
+
+    - Industry: Retail '
+  competitors: ''
+  notion_page_id: 2b7b3e69-c7c3-8198-84fd-f064aee78cfb
