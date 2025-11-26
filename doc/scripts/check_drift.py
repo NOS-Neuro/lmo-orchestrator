@@ -51,17 +51,18 @@ def main():
     print(f"[LMO] Clients above drift threshold ({threshold}):")
     for page in results:
         props = page["properties"]
-        name_parts = props["Name"]["title"]
-        name = name_parts[0]["plain_text"] if name_parts else "Untitled"
+        title_parts = props["Name"]["title"]
+        name = title_parts[0]["plain_text"] if title_parts else "Untitled"
 
         drift = props.get("Drift Score", {}).get("number")
         monthly = props.get("Monthly Fee", {}).get("number")
 
-        print(f"- {name}: drift={drift}, monthly={monthly}")
+        print(f"- {name}: drift={drift}, monthly_fee={monthly}")
 
-    # Exit with non-zero so GitHub marks the run as failed (alert)
+    # Non-zero exit so GitHub marks this run as failed = alert
     sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
+
