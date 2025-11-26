@@ -13,28 +13,27 @@ from openai import OpenAI
 NOTION_TOKEN = os.environ["NOTION_TOKEN"].strip()
 NOTION_DB = os.environ["NOTION_LMO_DB"].strip()
 
-# OPENAI_API_KEY is read automatically by the OpenAI client
-client = OpenAI()
+OPENAI_CLIENT = OpenAI()  # uses OPENAI_API_KEY from env
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
 # --------------------------------------------------------------------
 # LLM configuration
 # --------------------------------------------------------------------
 """
-We treat each entry here as a separate 'LLM' for scoring.
+Each entry here represents a separate "LLM" for scoring.
 
-Right now they are all OpenAI models, but the structure is designed so you
-can later plug in Anthropic / Gemini etc. by adding entries like:
-
-{"name": "claude-3.5-sonnet", "backend": "anthropic", "model": "claude-3.5-sonnet"}
-{"name": "gemini-1.5-flash", "backend": "gemini", "model": "gemini-1.5-flash"}
-
-and extending `call_llm` below.
+Backends:
+- openai   -> OpenAI Chat Completions API
+- anthropic -> Anthropic Messages API (Claude)
+- gemini    -> Google Gemini Generative Language API
 """
 
 LLM_CONFIGS = [
+    {"name": "chatgpt-4.1-mini", "backend": "openai", "model": "gpt-4.1-mini"},
+    {"name": "chatgpt-4.1", "backend": "openai", "model": "gpt-4.1"},
     {"name": "claude-3.5-sonnet", "backend": "anthropic", "model": "claude-3.5-sonnet"},
-    {"name": "gemini-1.5-flash", "backend": "gemini", "model": "gemini-1.5-flash"},
-
+    {"name": "gemini-1.5-flash", "backend": "gemini", "model": "models/gemini-1.5-flash"},
 ]
 
 
@@ -43,9 +42,6 @@ LLM_CONFIGS = [
 # --------------------------------------------------------------------
 
 def load_clients():
-    """
-    Load clients from doc/clients/clients.yaml
-    """
     path = "doc/clients/clients.yaml"
     print(f"[LMO] Loading clients from: {os.path.abspath(path)}")
     with open(path, "r", encoding="utf-8") as f:
@@ -59,18 +55,6 @@ def load_clients():
 
 
 def notion_update(page_id: str, scores: dict):
-    """
-    Update a client's row in the LMO Client Tracker database.
-
-    Properties used:
-      - Visibility Score (number)
-      - Accuracy Score   (number)
-      - Drift Score      (number)
-      - Automation Event (rich text)
-      - Automation Timestamp (date)
-      - Last Optimization Date (date)
-      - LLM Breakdown (rich text)  <-- auto-created if not present
-    """
     url = f"https://api.notion.com/v1/pages/{page_id}"
     headers = {
         "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -107,9 +91,6 @@ def notion_update(page_id: str, scores: dict):
 
 
 def build_prompt(client_obj: dict) -> str:
-    """
-    Build the evaluation prompt for a single client.
-    """
     name = client_obj.get("name", "")
     industry = client_obj.get("industry", "")
     location = client_obj.get("location", "")
@@ -131,9 +112,9 @@ Canonical facts about the company (what is actually true):
 You must output STRICT JSON with this exact shape:
 
 {{
-  "visibility": 0.0-1.0,  // how likely LLMs are to mention this company when asked about its niche
-  "accuracy": 0.0-1.0,    // how accurate the typical LLM answer is likely to be about this company
-  "drift": 0.0-1.0,       // how likely it is that current LLM answers are stale, outdated, or misaligned
+  "visibility": 0.0-1.0,
+  "accuracy": 0.0-1.0,
+  "drift": 0.0-1.0,
   "notes": "short explanation of why you chose these numbers"
 }}
 
@@ -153,20 +134,16 @@ def clamp01(x: float) -> float:
 
 
 def call_llm(config: dict, prompt: str) -> dict:
-    """
-    Call a single LLM config and return scores dict.
-
-    For now only 'openai' backend is implemented.
-    """
     backend = config["backend"]
     model = config["model"]
     name = config["name"]
 
     print(f"[LMO] Scoring with {name} ({backend}:{model})")
 
+    # ---------- OpenAI ----------
     if backend == "openai":
         try:
-            response = client.chat.completions.create(
+            response = OPENAI_CLIENT.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": "You are an LMO scoring engine that returns strict JSON."},
@@ -183,12 +160,7 @@ def call_llm(config: dict, prompt: str) -> dict:
             drift = clamp01(float(data.get("drift", 0.0)))
             notes = str(data.get("notes", "")).strip()
 
-            return {
-                "visibility": visibility,
-                "accuracy": accuracy,
-                "drift": drift,
-                "notes": notes,
-            }
+            return {"visibility": visibility, "accuracy": accuracy, "drift": drift, "notes": notes}
 
         except Exception as e:
             print(f"[LMO] Error calling {name}: {e}")
@@ -199,33 +171,122 @@ def call_llm(config: dict, prompt: str) -> dict:
                 "notes": f"Fallback scores for {name} due to error: {e}",
             }
 
-    # Placeholder for future backends
-    # elif backend == "anthropic":
-    #     ...
-    # elif backend == "gemini":
-    #     ...
+    # ---------- Anthropic (Claude) ----------
+    if backend == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            print(f"[LMO] Skipping {name}: ANTHROPIC_API_KEY not set")
+            return {
+                "visibility": 0.0,
+                "accuracy": 0.0,
+                "drift": 0.0,
+                "notes": f"Skipped {name}: missing ANTHROPIC_API_KEY",
+            }
 
-    else:
-        print(f"[LMO] Unsupported backend: {backend}")
-        return {
-            "visibility": 0.0,
-            "accuracy": 0.0,
-            "drift": 0.0,
-            "notes": f"Unsupported backend {backend}",
-        }
+        try:
+            url = "https://api.anthropic.com/v1/messages"
+            headers = {
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            payload = {
+                "model": model,
+                "max_tokens": 512,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": [
+                            {"type": "text", "text": "You are an LMO scoring engine that returns strict JSON."}
+                        ],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": prompt}],
+                    },
+                ],
+            }
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["content"][0]["text"].strip()
+            print(f"[LMO] Raw response from {name}: {content}")
+            parsed = json.loads(content)
+
+            visibility = clamp01(float(parsed.get("visibility", 0.0)))
+            accuracy = clamp01(float(parsed.get("accuracy", 0.0)))
+            drift = clamp01(float(parsed.get("drift", 0.0)))
+            notes = str(parsed.get("notes", "")).strip()
+
+            return {"visibility": visibility, "accuracy": accuracy, "drift": drift, "notes": notes}
+
+        except Exception as e:
+            print(f"[LMO] Error calling {name}: {e}")
+            return {
+                "visibility": 0.0,
+                "accuracy": 0.0,
+                "drift": 0.0,
+                "notes": f"Fallback scores for {name} due to error: {e}",
+            }
+
+    # ---------- Gemini ----------
+    if backend == "gemini":
+        if not GEMINI_API_KEY:
+            print(f"[LMO] Skipping {name}: GEMINI_API_KEY not set")
+            return {
+                "visibility": 0.0,
+                "accuracy": 0.0,
+                "drift": 0.0,
+                "notes": f"Skipped {name}: missing GEMINI_API_KEY",
+            }
+
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
+            full_prompt = "You are an LMO scoring engine that returns strict JSON.\n\n" + prompt
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": full_prompt}
+                        ]
+                    }
+                ]
+            }
+            resp = requests.post(url, json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            print(f"[LMO] Raw response from {name}: {content}")
+            parsed = json.loads(content)
+
+            visibility = clamp01(float(parsed.get("visibility", 0.0)))
+            accuracy = clamp01(float(parsed.get("accuracy", 0.0)))
+            drift = clamp01(float(parsed.get("drift", 0.0)))
+            notes = str(parsed.get("notes", "")).strip()
+
+            return {"visibility": visibility, "accuracy": accuracy, "drift": drift, "notes": notes}
+
+        except Exception as e:
+            print(f"[LMO] Error calling {name}: {e}")
+            return {
+                "visibility": 0.0,
+                "accuracy": 0.0,
+                "drift": 0.0,
+                "notes": f"Fallback scores for {name} due to error: {e}",
+            }
+
+    # ---------- Unsupported backend ----------
+    print(f"[LMO] Unsupported backend: {backend}")
+    return {
+        "visibility": 0.0,
+        "accuracy": 0.0,
+        "drift": 0.0,
+        "notes": f"Unsupported backend {backend}",
+    }
 
 
 def score_with_all_llms(prompt: str) -> dict:
-    """
-    Run scoring across all configured LLMs and aggregate results.
-    Returns a dict with:
-      - visibility / accuracy / drift (overall average)
-      - breakdown: string summary
-      - event_label: text for Automation Event
-    """
     per_llm = {}
     vis_list, acc_list, drift_list = [], [], []
-    notes_chunks = []
 
     for cfg in LLM_CONFIGS:
         name = cfg["name"]
@@ -236,17 +297,13 @@ def score_with_all_llms(prompt: str) -> dict:
         acc_list.append(scores["accuracy"])
         drift_list.append(scores["drift"])
 
-        notes_chunks.append(f"{name}: {scores['notes']}")
-
     if not vis_list:
-        # Should not happen, but be safe
         overall_visibility = overall_accuracy = overall_drift = 0.0
     else:
         overall_visibility = sum(vis_list) / len(vis_list)
         overall_accuracy = sum(acc_list) / len(acc_list)
         overall_drift = sum(drift_list) / len(drift_list)
 
-    # Build a compact breakdown string for Notion
     breakdown_parts = []
     for name, s in per_llm.items():
         breakdown_parts.append(
@@ -260,7 +317,6 @@ def score_with_all_llms(prompt: str) -> dict:
         "drift": round(overall_drift, 3),
         "breakdown": breakdown_str,
         "event_label": "Weekly optimization cycle (multi-LLM)",
-        "notes_joined": " | ".join(notes_chunks),
     }
     return scores
 
@@ -292,8 +348,4 @@ def run_cycle():
 if __name__ == "__main__":
     run_cycle()
 
-
-
-if __name__ == "__main__":
-    run_cycle()
 
