@@ -30,3 +30,4 @@ jobs:
           NOTION_LMO_DB: ${{ secrets.NOTION_LMO_DB }}
         run: |
           python doc/scripts/check_drift.py
+
