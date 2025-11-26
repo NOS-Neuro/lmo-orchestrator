@@ -16,6 +16,26 @@ NOTION_DB = os.environ["NOTION_LMO_DB"].strip()
 # OPENAI_API_KEY is read automatically by the OpenAI client
 client = OpenAI()
 
+# --------------------------------------------------------------------
+# LLM configuration
+# --------------------------------------------------------------------
+"""
+We treat each entry here as a separate 'LLM' for scoring.
+
+Right now they are all OpenAI models, but the structure is designed so you
+can later plug in Anthropic / Gemini etc. by adding entries like:
+
+{"name": "claude-3.5-sonnet", "backend": "anthropic", "model": "claude-3.5-sonnet"}
+{"name": "gemini-1.5-flash", "backend": "gemini", "model": "gemini-1.5-flash"}
+
+and extending `call_llm` below.
+"""
+
+LLM_CONFIGS = [
+    {"name": "chatgpt-4.1-mini", "backend": "openai", "model": "gpt-4.1-mini"},
+    {"name": "chatgpt-4.1", "backend": "openai", "model": "gpt-4.1"},
+]
+
 
 # --------------------------------------------------------------------
 # Helpers
@@ -24,18 +44,6 @@ client = OpenAI()
 def load_clients():
     """
     Load clients from doc/clients/clients.yaml
-
-    Expected structure:
-
-    clients:
-      - name: "Acme Logistics"
-        slug: "acme-logistics"
-        location: "Toronto, ON, Canada"
-        industry: "3PL / warehousing"
-        canonical_facts: |
-          - Fact 1
-          - Fact 2
-        notion_page_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
     """
     path = "doc/clients/clients.yaml"
     print(f"[LMO] Loading clients from: {os.path.abspath(path)}")
@@ -53,13 +61,14 @@ def notion_update(page_id: str, scores: dict):
     """
     Update a client's row in the LMO Client Tracker database.
 
-    This assumes the database has the following properties:
+    Properties used:
       - Visibility Score (number)
       - Accuracy Score   (number)
       - Drift Score      (number)
       - Automation Event (rich text)
       - Automation Timestamp (date)
       - Last Optimization Date (date)
+      - LLM Breakdown (rich text)  <-- auto-created if not present
     """
     url = f"https://api.notion.com/v1/pages/{page_id}"
     headers = {
@@ -77,19 +86,18 @@ def notion_update(page_id: str, scores: dict):
             "Drift Score": {"number": scores["drift"]},
             "Automation Event": {
                 "rich_text": [
-                    {"text": {"content": scores.get("event_label", "Weekly optimization cycle")}}
+                    {"text": {"content": scores.get("event_label", "Weekly optimization cycle (multi-LLM)")}}
                 ]
             },
             "Automation Timestamp": {"date": {"start": now_iso}},
             "Last Optimization Date": {"date": {"start": now_iso}},
-            # If you later add a "Latest Notes" rich text property, you can uncomment:
-            # "Latest Notes": {
-            #     "rich_text": [{"text": {"content": scores.get("notes", "")[:1900]}}],
-            # },
+            "LLM Breakdown": {
+                "rich_text": [{"text": {"content": scores.get("breakdown", "")[:1900]}}],
+            },
         }
     }
 
-    print(f"[LMO] Updating Notion page {page_id} with scores: {scores}")
+    print(f"[LMO] Updating Notion page {page_id} with overall scores: {scores}")
     resp = requests.patch(url, headers=headers, json=body)
     print(f"[LMO] Notion update status: {resp.status_code}")
     if not resp.ok:
@@ -135,54 +143,125 @@ Rules:
     """.strip()
 
 
-def call_openai_for_scores(prompt: str) -> dict:
+# --------------------------------------------------------------------
+# LLM calling + aggregation
+# --------------------------------------------------------------------
+
+def clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def call_llm(config: dict, prompt: str) -> dict:
     """
-    Call OpenAI to get visibility/accuracy/drift scores as JSON.
-    Includes a defensive fallback if parsing fails.
+    Call a single LLM config and return scores dict.
+
+    For now only 'openai' backend is implemented.
     """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": "You are an LMO scoring engine that returns strict JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
-        )
+    backend = config["backend"]
+    model = config["model"]
+    name = config["name"]
 
-        content = response.choices[0].message.content.strip()
-        print(f"[LMO] Raw model response: {content}")
+    print(f"[LMO] Scoring with {name} ({backend}:{model})")
 
-        data = json.loads(content)
+    if backend == "openai":
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are an LMO scoring engine that returns strict JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+            )
+            content = response.choices[0].message.content.strip()
+            print(f"[LMO] Raw response from {name}: {content}")
+            data = json.loads(content)
 
-        visibility = float(data.get("visibility", 0.0))
-        accuracy = float(data.get("accuracy", 0.0))
-        drift = float(data.get("drift", 0.0))
-        notes = str(data.get("notes", "")).strip()
+            visibility = clamp01(float(data.get("visibility", 0.0)))
+            accuracy = clamp01(float(data.get("accuracy", 0.0)))
+            drift = clamp01(float(data.get("drift", 0.0)))
+            notes = str(data.get("notes", "")).strip()
 
-        # Clamp values to 0–1 to avoid weird outputs
-        def clamp(x):
-            return max(0.0, min(1.0, x))
+            return {
+                "visibility": visibility,
+                "accuracy": accuracy,
+                "drift": drift,
+                "notes": notes,
+            }
 
-        scores = {
-            "visibility": clamp(visibility),
-            "accuracy": clamp(accuracy),
-            "drift": clamp(drift),
-            "notes": notes,
-            "event_label": "Weekly optimization cycle",
-        }
-        return scores
+        except Exception as e:
+            print(f"[LMO] Error calling {name}: {e}")
+            return {
+                "visibility": 0.0,
+                "accuracy": 0.0,
+                "drift": 0.0,
+                "notes": f"Fallback scores for {name} due to error: {e}",
+            }
 
-    except Exception as e:
-        print(f"[LMO] Error calling OpenAI or parsing JSON: {e}")
-        # Safe fallback: neutral scores with error note
+    # Placeholder for future backends
+    # elif backend == "anthropic":
+    #     ...
+    # elif backend == "gemini":
+    #     ...
+
+    else:
+        print(f"[LMO] Unsupported backend: {backend}")
         return {
             "visibility": 0.0,
             "accuracy": 0.0,
             "drift": 0.0,
-            "notes": f"Fallback scores due to error: {e}",
-            "event_label": "Weekly optimization cycle (fallback)",
+            "notes": f"Unsupported backend {backend}",
         }
+
+
+def score_with_all_llms(prompt: str) -> dict:
+    """
+    Run scoring across all configured LLMs and aggregate results.
+    Returns a dict with:
+      - visibility / accuracy / drift (overall average)
+      - breakdown: string summary
+      - event_label: text for Automation Event
+    """
+    per_llm = {}
+    vis_list, acc_list, drift_list = [], [], []
+    notes_chunks = []
+
+    for cfg in LLM_CONFIGS:
+        name = cfg["name"]
+        scores = call_llm(cfg, prompt)
+        per_llm[name] = scores
+
+        vis_list.append(scores["visibility"])
+        acc_list.append(scores["accuracy"])
+        drift_list.append(scores["drift"])
+
+        notes_chunks.append(f"{name}: {scores['notes']}")
+
+    if not vis_list:
+        # Should not happen, but be safe
+        overall_visibility = overall_accuracy = overall_drift = 0.0
+    else:
+        overall_visibility = sum(vis_list) / len(vis_list)
+        overall_accuracy = sum(acc_list) / len(acc_list)
+        overall_drift = sum(drift_list) / len(drift_list)
+
+    # Build a compact breakdown string for Notion
+    breakdown_parts = []
+    for name, s in per_llm.items():
+        breakdown_parts.append(
+            f"{name}: v={s['visibility']:.2f}, a={s['accuracy']:.2f}, d={s['drift']:.2f}"
+        )
+    breakdown_str = " | ".join(breakdown_parts)
+
+    scores = {
+        "visibility": round(overall_visibility, 3),
+        "accuracy": round(overall_accuracy, 3),
+        "drift": round(overall_drift, 3),
+        "breakdown": breakdown_str,
+        "event_label": "Weekly optimization cycle (multi-LLM)",
+        "notes_joined": " | ".join(notes_chunks),
+    }
+    return scores
 
 
 # --------------------------------------------------------------------
@@ -194,10 +273,10 @@ def run_cycle():
 
     for c in clients:
         name = c.get("name", "Unknown")
-        print(f"\n[LMO] Running optimization cycle for: {name}")
+        print(f"\n[LMO] Running multi-LLM optimization cycle for: {name}")
 
         prompt = build_prompt(c)
-        scores = call_openai_for_scores(prompt)
+        scores = score_with_all_llms(prompt)
 
         page_id = c.get("notion_page_id")
         if not page_id:
@@ -206,7 +285,12 @@ def run_cycle():
 
         notion_update(page_id, scores)
 
-    print("\n[LMO] Optimization cycle complete.")
+    print("\n[LMO] Multi-LLM optimization cycle complete.")
+
+
+if __name__ == "__main__":
+    run_cycle()
+
 
 
 if __name__ == "__main__":
