@@ -32,8 +32,9 @@ and extending `call_llm` below.
 """
 
 LLM_CONFIGS = [
-    {"name": "chatgpt-4.1-mini", "backend": "openai", "model": "gpt-4.1-mini"},
-    {"name": "chatgpt-4.1", "backend": "openai", "model": "gpt-4.1"},
+    {"name": "claude-3.5-sonnet", "backend": "anthropic", "model": "claude-3.5-sonnet"},
+    {"name": "gemini-1.5-flash", "backend": "gemini", "model": "gemini-1.5-flash"},
+
 ]
 
 
