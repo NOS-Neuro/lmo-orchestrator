@@ -145,8 +145,16 @@ def call_llm(config: dict, prompt: str) -> dict:
         try:
             response = OPENAI_CLIENT.chat.completions.create(
                 model=model,
+                response_format={"type": "json_object"},  # forces JSON
                 messages=[
-                    {"role": "system", "content": "You are an LMO scoring engine that returns strict JSON."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an LMO scoring engine. "
+                            "You MUST respond with a single JSON object only, "
+                            "no prose, no explanation outside JSON."
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
@@ -170,6 +178,9 @@ def call_llm(config: dict, prompt: str) -> dict:
                 "drift": 0.0,
                 "notes": f"Fallback scores for {name} due to error: {e}",
             }
+
+    # (leave the anthropic + gemini branches below as-is)
+    ...
 
     # ---------- Anthropic (Claude) ----------
     if backend == "anthropic":
