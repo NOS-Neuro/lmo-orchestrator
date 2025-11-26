@@ -59,7 +59,7 @@ jobs:
           CLIENT_SLUG: ${{ github.event.inputs.client_slug }}
           INDUSTRY: ${{ github.event.inputs.industry }}
           MONTHLY_FEE: ${{ github.event.inputs.monthly_fee }}
-          TEMPLATE_REPO: NOS-Neuro/Acme--LMO
+          TEMPLATE_REPO: Acme--LMO
         run: |
           python doc/scripts/provision_client.py
 
